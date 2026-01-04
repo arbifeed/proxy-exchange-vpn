@@ -1,0 +1,11 @@
+# Backend
+fastapi
+uvicorn
+sqlalchemy
+alembic
+python-dotenv
+pydantic
+requests
+
+# Bots
+aiogram

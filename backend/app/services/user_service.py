@@ -8,6 +8,11 @@ from backend.app.utils.security import generate_api_key
 from backend.app.services.wireguard_service import WireGuardService
 from fastapi import HTTPException
 
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
+from backend.app.models import User
+from backend.app.db import async_session_maker  # ИЗМЕНИТЬ ИМПОРТ
+
 
 class UserService:
     @staticmethod
@@ -123,3 +128,26 @@ class UserService:
         db.commit()
 
         return {"status": "device removed"}
+    
+    @staticmethod
+    async def get_user_by_telegram_id(telegram_id: int) -> User | None:
+        async with async_session_maker() as session:  # ИЗМЕНИТЬ ЗДЕСЬ
+            stmt = select(User).where(User.telegram_id == telegram_id)
+            result = await session.execute(stmt)
+            return result.scalar_one_or_none()
+        
+    @staticmethod
+    async def get_or_create_user_by_telegram_id(telegram_id: int, username: str = None) -> User:
+        async with async_session_maker() as session:  # ИЗМЕНИТЬ ЗДЕСЬ
+            stmt = select(User).where(User.telegram_id == telegram_id)
+            result = await session.execute(stmt)
+            user = result.scalar_one_or_none()
+            
+            if user:
+                return user
+            
+            user = User(telegram_id=telegram_id, telegram_username=username)
+            session.add(user)
+            await session.commit()
+            await session.refresh(user)
+            return user

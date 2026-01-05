@@ -3,9 +3,10 @@ from fastapi.middleware.cors import CORSMiddleware
 import threading
 
 from backend.app.core.config import settings
-from backend.app.db import engine
+from backend.app.db import engine, async_session_maker
 from backend.app.models import Base
 
+from backend.app.routers.payment_create_router import router as payment_create_router
 from backend.app.api import router as api_router
 from backend.app.routers.proxy_router import router as proxy_router
 from backend.app.routers.user_router import router as user_router
@@ -16,10 +17,7 @@ from backend.app.routers.cryptobot_webhook_router import (
     router as cryptobot_webhook_router
 )
 
-
-from fastapi import BackgroundTasks
 from backend.app.services.subscription_service import SubscriptionService
-from backend.app.db import SessionLocal
 
 app = FastAPI(title=settings.PROJECT_NAME)
 
@@ -37,27 +35,27 @@ app.include_router(user_router)
 app.include_router(admin_router)
 app.include_router(payments_router)
 app.include_router(cryptobot_webhook_router)
+app.include_router(payment_create_router)
 
 @app.on_event("startup")
-def on_startup():
-    Base.metadata.create_all(bind=engine)
-
-
-@app.get("/ping")
-def ping():
-    return {"status": "ok"}
-
-@app.on_event("startup")
-def enforce_subscriptions():
-    db = SessionLocal()
-    try:
-        SubscriptionService.enforce(db)
-    finally:
-        db.close()
-
-@app.on_event("startup")
-def start_background_tasks():
+async def startup_event():
+    """Все startup задачи в одном асинхронном обработчике"""
+    # 1. Асинхронно создаём таблицы в БД
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    
+    # 2. Проверяем и исправляем подписки
+    async with async_session_maker() as db:
+        await SubscriptionService.enforce(db)
+    
+    # 3. Запускаем фоновую задачу проверки подписок
     threading.Thread(
         target=subscription_watcher,
         daemon=True
     ).start()
+    
+    print("✅ Application started successfully!")
+
+@app.get("/ping")
+def ping():
+    return {"status": "ok"}
